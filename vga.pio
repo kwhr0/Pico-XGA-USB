@@ -1,0 +1,211 @@
+.program hsync_vga
+.side_set 1 opt
+.wrap_target
+	irq clear 4
+	mov osr, y
+	out x, 8 side 0		; sync pulse -1
+loop1:
+	jmp x--, loop1 [4]
+	out x, 8 side 1		; back porch -1
+loop2:
+	jmp x--, loop2 [4]
+	irq clear 6			; pixel start
+	out x, 16			; pixel count + front porch -1
+loop3:
+	jmp x--, loop3 [4]
+.wrap
+
+.program vsync_vga
+.side_set 1 opt
+.wrap_target
+	irq 0				; vsync interrput
+	irq wait 4 side 0
+	irq wait 4
+	mov osr, y side 1
+	out x, 16			; back porch -1
+loop1:
+	irq wait 4
+	jmp x--, loop1
+	out x, 16			; valid line count -1
+loop2:
+	irq wait 4
+	irq clear 5			; pixel valid
+	jmp x--, loop2
+	set x, 9			; front porch -1
+loop3:
+	irq wait 4
+	jmp x--, loop3
+.wrap
+
+.program pixel_vga
+.side_set 3 opt
+.wrap_target
+	out null, 32		; discard first data
+	mov x, y
+	irq wait 5 side 0	; wait for valid V line
+	irq wait 6			; wait for pixel start
+loop:
+	out pins, 3			; output pixel data
+	out null, 1 [1]
+	jmp x--, loop [1]
+.wrap
+
+
+.program hsync_xga
+.side_set 1 opt
+.wrap_target
+	irq clear 4
+	mov osr, y
+	out x, 8 side 0		; sync pulse -1
+loop1:
+	jmp x--, loop1 [1]
+	out x, 8 side 1		; back porch -1
+loop2:
+	jmp x--, loop2 [1]
+	irq clear 6			; pixel start
+	out x, 16			; pixel count + front porch -1
+loop3:
+	jmp x--, loop3 [1]
+.wrap
+
+.program vsync_xga
+.side_set 1 opt
+.wrap_target
+	irq 0				; vsync interrput
+	set x, 5 side 0		; sync pulse -1
+loop0:
+	irq wait 4
+	jmp x--, loop0
+	set x, 28 side 1	; back porch -1
+loop1:
+	irq wait 4
+	jmp x--, loop1
+	mov x, y			; valid line count -1
+loop2:
+	irq wait 4
+	irq clear 5			; pixel valid
+	jmp x--, loop2
+	set x, 2			; front porch -1
+loop3:
+	irq wait 4
+	jmp x--, loop3
+.wrap
+
+.program pixel_xga
+.side_set 1 opt
+.wrap_target
+	out null, 32		; discard first data
+	mov x, y
+	irq wait 5 side 0	; wait for valid V line
+	irq wait 6			; wait for pixel start
+loop:
+	out pins, 1			; output pixel data
+	jmp x--, loop
+.wrap
+
+.program copy
+.wrap_target
+	mov pins, pins
+.wrap
+
+% c-sdk {
+
+#define XGA
+
+#ifdef XGA
+#define PIX_XN		1024
+#define PIX_YN		768
+#define PIN_MONO	22
+#else
+#define PIX_XN		640
+#define PIX_YN		480
+#endif
+#define PIN_VSYNC	14
+#define PIN_HSYNC	18
+#define PIN_RGB		15	// 15:BLUE, 16:GREEN, 17:RED
+
+static inline void hsync_program_init(PIO pio, uint sm) {
+#ifdef XGA
+	const uint front = 24, sync = 136, back = 160;
+	uint offset = pio_add_program(pio, &hsync_xga_program);
+	pio_sm_config c = hsync_xga_program_get_default_config(offset);
+#else
+	const uint front = 16, sync = 96, back = 48;
+	uint offset = pio_add_program(pio, &hsync_vga_program);
+	pio_sm_config c = hsync_vga_program_get_default_config(offset);
+#endif
+	sm_config_set_sideset_pins(&c, PIN_HSYNC);
+	sm_config_set_out_shift(&c, true, false, 32); // shift right, no-autopull
+	pio_gpio_init(pio, PIN_HSYNC);
+	pio_sm_set_consecutive_pindirs(pio, sm, PIN_HSYNC, 1, true); // output
+	pio_sm_init(pio, sm, offset, &c);
+	// jmp以外でかかる3ドットクロックを調整するため1ループずつ減らす
+	pio_sm_put_blocking(pio, sm, (PIX_XN + front - 2) << 16 | (back - 2) << 8 | (sync - 2));
+	pio_sm_exec_wait_blocking(pio, sm, pio_encode_pull(false, false));
+	pio_sm_exec_wait_blocking(pio, sm, pio_encode_mov(pio_y, pio_osr));
+}
+
+static inline void vsync_program_init(PIO pio, uint sm) {
+#ifdef XGA
+	uint offset = pio_add_program(pio, &vsync_xga_program);
+	pio_sm_config c = vsync_xga_program_get_default_config(offset);
+#else
+	const uint back = 33;
+	uint offset = pio_add_program(pio, &vsync_vga_program);
+	pio_sm_config c = vsync_vga_program_get_default_config(offset);
+#endif
+	sm_config_set_sideset_pins(&c, PIN_VSYNC);
+	sm_config_set_out_shift(&c, true, false, 32); // shift right, no-autopull
+	pio_gpio_init(pio, PIN_VSYNC);
+	pio_sm_set_consecutive_pindirs(pio, sm, PIN_VSYNC, 1, true); // output
+	pio_sm_init(pio, sm, offset, &c);
+#ifdef XGA
+	pio_sm_put_blocking(pio, sm, PIX_YN - 1);
+#else
+	pio_sm_put_blocking(pio, sm, (PIX_YN - 1) << 16 | (back - 1));
+#endif
+	pio_sm_exec_wait_blocking(pio, sm, pio_encode_pull(false, false));
+	pio_sm_exec_wait_blocking(pio, sm, pio_encode_mov(pio_y, pio_osr));
+}
+
+static inline void pixel_program_init(PIO pio, uint sm) {
+#ifdef XGA
+	uint offset = pio_add_program(pio, &pixel_xga_program);
+	pio_sm_config c = pixel_xga_program_get_default_config(offset);
+	sm_config_set_out_pins(&c, PIN_MONO, 1);
+	sm_config_set_sideset_pins(&c, PIN_MONO);
+#else
+	uint offset = pio_add_program(pio, &pixel_vga_program);
+	pio_sm_config c = pixel_vga_program_get_default_config(offset);
+	sm_config_set_out_pins(&c, PIN_RGB, 3);
+	sm_config_set_sideset_pins(&c, PIN_RGB);
+#endif
+	sm_config_set_out_shift(&c, true, true, 32); // shift right, autopull
+	sm_config_set_fifo_join(&c, PIO_FIFO_JOIN_TX);
+#ifdef XGA
+	pio_gpio_init(pio, PIN_MONO);
+	pio_sm_set_consecutive_pindirs(pio, sm, PIN_MONO, 1, true); // output
+#else
+	pio_gpio_init(pio, PIN_RGB);
+	pio_gpio_init(pio, PIN_RGB + 1);
+	pio_gpio_init(pio, PIN_RGB + 2);
+	pio_sm_set_consecutive_pindirs(pio, sm, PIN_RGB, 3, true); // output
+#endif
+	pio_sm_init(pio, sm, offset, &c);
+	pio_sm_put_blocking(pio, sm, PIX_XN - 1);
+	pio_sm_exec_wait_blocking(pio, sm, pio_encode_pull(false, false));
+	pio_sm_exec_wait_blocking(pio, sm, pio_encode_mov(pio_y, pio_osr));
+}
+
+static inline void copy_program_init(PIO pio, uint sm, uint offset, uint dstpin) {
+#ifdef XGA
+	pio_sm_config c = copy_program_get_default_config(offset);
+	sm_config_set_in_pins(&c, PIN_MONO);
+	sm_config_set_out_pins(&c, dstpin, 1);
+	pio_gpio_init(pio, dstpin);
+	pio_sm_set_consecutive_pindirs(pio, sm, dstpin, 1, true); // output
+	pio_sm_init(pio, sm, offset, &c);
+	pio_sm_set_enabled(pio, sm, true);
+#endif
+}
+%}
