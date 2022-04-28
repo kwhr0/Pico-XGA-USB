@@ -40,7 +40,7 @@ int main() {
 			// no break
 		case 'c':
 			cursorOff();
-			for (u8 *p = (u8 *)0x10000000; p < (u8 *)0x101fffff; p += 0x10) {
+			for (u8 *p = (u8 *)0x10000000; p < (u8 *)0x10200000; p += 0x10) {
 				c = vsync_count;
 				xprintf("%08X ", p);
 				for (i = 0; i < 0x10; i++) xprintf("%02X ", p[i]);

@@ -5,7 +5,7 @@ start:
 	out y, 16				; 0: reset 1: no-input 2: input
 	jmp y--, loop
 reset:
-	set pins, 0	side 3 [2]
+	set pins, 0 side 3 [2]
 	jmp x--, reset
 	set pins, 3
 	jmp start

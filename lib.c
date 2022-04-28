@@ -61,7 +61,7 @@ static void newLine() {
 	cursX = 0;
 	if (++cursY >= SCREEN_YN) {
 		--cursY;
-		memcpy(vram, vram + VRAM_STRIDE * FONT_YN, 4 * (VRAM_N - VRAM_STRIDE * FONT_YN));
+		memmove(vram, vram + VRAM_STRIDE * FONT_YN, 4 * (VRAM_N - VRAM_STRIDE * FONT_YN));
 		memset(vram + VRAM_STRIDE * FONT_YN * (SCREEN_YN - 1), 0, 4 * VRAM_STRIDE * FONT_YN);
 	}
 	cursor();

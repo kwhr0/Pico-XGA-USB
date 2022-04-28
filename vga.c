@@ -16,8 +16,8 @@ static void vsync_intr() {
 
 void vga_init(PIO _pio, PIO piosub) {
 	pio = _pio;
-	uint sm_d = pio_claim_unused_sm(pio, true);
-	pixel_program_init(pio, sm_d);
+	uint sm_p = pio_claim_unused_sm(pio, true);
+	pixel_program_init(pio, sm_p);
 	uint sm_h = pio_claim_unused_sm(pio, true);
 	hsync_program_init(pio, sm_h);
 	uint sm_v = pio_claim_unused_sm(pio, true);
@@ -35,13 +35,13 @@ void vga_init(PIO _pio, PIO piosub) {
 	dma_channel_config c = dma_channel_get_default_config(dma_chan);
 	channel_config_set_transfer_data_size(&c, DMA_SIZE_32);
 	channel_config_set_read_increment(&c, true);
-	channel_config_set_dreq(&c, pio_get_dreq(pio, sm_d, true));
-	dma_channel_configure(dma_chan, &c, &pio0_hw->txf[sm_d], NULL, VRAM_N, false);
+	channel_config_set_dreq(&c, pio_get_dreq(pio, sm_p, true));
+	dma_channel_configure(dma_chan, &c, &pio0_hw->txf[sm_p], NULL, VRAM_N, false);
 //
 	pio_set_irq0_source_enabled(pio, pis_interrupt0, true);
 	irq_set_exclusive_handler(PIO0_IRQ_0, vsync_intr);
 	irq_set_enabled(PIO0_IRQ_0, true);
-	pio_sm_set_enabled(pio, sm_d, true);
+	pio_sm_set_enabled(pio, sm_p, true);
 	pio_sm_set_enabled(pio, sm_h, true);
 	pio_sm_set_enabled(pio, sm_v, true);
 }

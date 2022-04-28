@@ -208,8 +208,8 @@ static bool __no_inline_not_in_flash_func(usb_task)(repeating_timer_t *timer) {
 			wait(STATE_EOP40, 10);
 			break;
 		case STATE_EOP40:
-			if (++count < 40) usb_trans(eop, false);
-			else state = STATE_CONFIG;
+			usb_trans(eop, false);
+			if (++count >= 40) state = STATE_CONFIG;
 			break;
 		case STATE_CONFIG:
 			usb_trans(setup0, false);
